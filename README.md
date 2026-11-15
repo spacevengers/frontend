@@ -16,7 +16,7 @@ Open `http://localhost:3100`. The map is available at `/map`, the globe at `/`, 
 ## Data modes
 
 - **Sample history** powers the map, globe, and calendar with generated placeholder records. These are not NASA observations.
-- **Backend · month** on `/map` and `/` reads the Go backend through `/api/integration/*` when `NEXT_PUBLIC_API_URL` is set. It requests the selected month and area, then reuses the live map renderer. Set it in `.env.local`:
+- **Backend · month** on `/map` and `/` reads the Go backend through `/api/integration/*` when `NEXT_PUBLIC_API_URL` is set. It requests the selected month and area, then reuses the live map renderer. The calendar uses the backend archive summary when an area is selected. Set it in `.env.local`:
   ```bash
   NEXT_PUBLIC_API_URL=http://localhost:8000
   ```

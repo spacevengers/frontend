@@ -127,6 +127,9 @@ function LiveDetectionRecord({ detail, baseTime, windowMinutes }: { detail: NonN
         <dt>Fire radiative power</dt><dd className="num">{detail.frp.toFixed(1)} MW</dd>
         <dt>Pixel size</dt><dd>{detail.sensor === "MODIS" ? "1 km" : "375 m"}</dd>
         <dt>Pairs in selected window</dt><dd>{partners.length}</dd>
+        {detail.clusterStatus ? <><dt>Harmonized status</dt><dd>{detail.clusterStatus === "matched" ? "Potentially corresponding" : detail.clusterStatus === "modis_only" ? "MODIS only" : "VIIRS only"}</dd></> : null}
+        {detail.pModisDetect !== null ? <><dt>P(MODIS detects footprint)</dt><dd><span className="num">{detail.pModisDetect.toFixed(2)}</span> <span className="muted">ML output</span></dd></> : null}
+        {detail.frpCalibrated !== null ? <><dt>Calibrated FRP</dt><dd><span className="num">{detail.frpCalibrated.toFixed(1)} MW</span> <span className="muted">ML output, kept separate</span></dd></> : null}
       </dl>
       {partners.length ? (
         <ul className="note mt-3">

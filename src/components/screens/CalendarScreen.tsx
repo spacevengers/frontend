@@ -16,7 +16,9 @@ import { useDataset } from "@/lib/sample/use-dataset";
 import { useTheme } from "@/lib/theme";
 import { useArea } from "@/lib/use-area";
 import { useViewState } from "@/lib/view-state";
-import { archiveComparison, archiveMonthStats, useArchiveSummary } from "@/lib/history/client";
+import { archiveComparison, archiveMonthStats, useArchiveSummary, type ArchiveMonthSummary } from "@/lib/history/client";
+import { BACKEND_CONFIGURED } from "@/lib/backend/live";
+import { useBackendArchiveSummary } from "@/lib/backend/archive";
 
 type RecordSet = "harmonized" | "modis" | "viirs";
 type Scale = "count" | "anomaly";
@@ -63,12 +65,29 @@ export function CalendarScreen() {
   const theme = useTheme();
   const area = useArea(ds?.world ?? null, view);
   const archive = useArchiveSummary(area?.kind === "country" ? area.name : null);
+  const backendArchive = useBackendArchiveSummary(
+    BACKEND_CONFIGURED && area !== null,
+    area,
+    `${FIRST_YEAR}-01`,
+    `${LAST_YEAR}-12`,
+  );
   const { mi } = view;
   const [set, setSet] = useState<RecordSet>("harmonized");
   const [scale, setScale] = useState<Scale>("count");
   const [tip, setTip] = useState<{ m: number; x: number; y: number } | null>(null);
 
-  const archiveMonths = area?.kind === "country" && archive.value?.country === area.name ? archive.value.months : null;
+  const backendMonths = backendArchive.value?.months ?? null;
+  const staticMonths = area?.kind === "country" && archive.value?.country === area.name ? archive.value.months : null;
+  const archiveMonths = useMemo(() => {
+    const merged: Record<string, ArchiveMonthSummary> = {};
+    if (staticMonths) Object.assign(merged, staticMonths);
+    if (backendMonths) {
+      for (const [key, value] of Object.entries(backendMonths)) {
+        if (value.harmonized > 0) merged[key] = value;
+      }
+    }
+    return Object.keys(merged).length ? merged : null;
+  }, [backendMonths, staticMonths]);
   const months = useMemo<MonthStats[]>(() => (ds ? Array.from({ length: MONTH_COUNT }, (_, m) => {
     const archived = archiveMonths?.[`${FIRST_YEAR + Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, "0")}`];
     return archived ? archiveMonthStats(archived) : statsFor(ds, m, area);
@@ -128,7 +147,8 @@ export function CalendarScreen() {
         <div className="mb-3 flex flex-wrap items-center gap-2.5">
           <span className="chip">Area · {areaLabel(area)} · {monthLabel(mi)}</span>
           <Link className="muted text-xs" href={`/map${query ? `?${query}` : ""}`}>Change area on the map</Link>
-          {archiveMonths ? <span className="chip">NASA FIRMS archive</span> : area?.kind === "country" && archive.loading ? <span className="muted text-xs">Checking NASA FIRMS archive…</span> : null}
+          {archiveMonths ? <span className="chip">{backendMonths ? "Backend archive" : "NASA FIRMS archive"}</span> : (area && (backendArchive.loading || archive.loading)) ? <span className="muted text-xs">Checking archive…</span> : null}
+          {backendArchive.error && !backendMonths ? <span className="muted text-xs" role="status">{backendArchive.error}</span> : null}
           {area ? (
             <button className="muted cursor-pointer text-xs underline" type="button" onClick={() => setView({ country: null, bbox: null })}>Whole world</button>
           ) : null}
@@ -282,6 +302,7 @@ export function CalendarScreen() {
               ["VIIRS product", "VNP14IMG, 375 m (placeholder)"],
               ["Satellites", "Terra, Aqua, S-NPP, NOAA-20/21"],
               ["Period on record", `Jan ${FIRST_YEAR} – Dec ${LAST_YEAR}`],
+              ["Archive source", backendMonths ? "TerraWatch backend" : "Static Kenya archive"],
               ["Matching rule", `≤ ${MATCHING_RULE.maxKm} km and ± ${MATCHING_RULE.maxMinutes} min`],
             ]}
           />

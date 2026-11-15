@@ -9,8 +9,16 @@ export const LIVE_VIIRS_CLASSES = ["low", "nominal", "high"] as const;
  */
 export const LIVE_MAX_MINUTES = 180;
 
-export type LiveModisRow = [number, number, number, number, number, number, number, number, number];
-export type LiveViirsRow = [number, number, number, number, number, number, number];
+export type LiveModisRow = [number, number, number, number, number, number, number, number, number, number?];
+export type LiveViirsRow = [number, number, number, number, number, number, number, number?];
+
+export interface LiveCluster {
+  cluster_uid: string;
+  member_ids: string[];
+  match_status: "matched" | "viirs_only" | "modis_only";
+  p_modis_detect: number | null;
+  frp_calibrated: number | null;
+}
 
 export interface LiveSource {
   name: string;
@@ -27,5 +35,6 @@ export interface LiveFirms {
   sources: LiveSource[];
   modis: LiveModisRow[];
   viirs: LiveViirsRow[];
-  links: [number, number, number][];
+  links: [number, number, number, number?][];
+  clusters?: LiveCluster[];
 }

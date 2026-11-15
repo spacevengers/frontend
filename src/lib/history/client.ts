@@ -7,7 +7,7 @@ import { toYearMonth } from "@/lib/period";
 
 export interface ArchiveMonthSummary extends Pick<MonthStats, "harmonized" | "modis" | "viirs" | "pairs"> {
   modisBySatellite: { Terra: number; Aqua: number };
-  viirsBySatellite: { "S-NPP": number; "NOAA-20": number };
+  viirsBySatellite: { "S-NPP": number; "NOAA-20": number; "NOAA-21"?: number };
   aquaPaired: number;
   terraPaired: number;
   viirsPaired: number;

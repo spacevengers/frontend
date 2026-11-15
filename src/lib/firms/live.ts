@@ -176,6 +176,9 @@ export interface LiveDetail {
   frp: number;
   confidence: string;
   partners: LivePartner[];
+  clusterStatus: "matched" | "viirs_only" | "modis_only" | null;
+  pModisDetect: number | null;
+  frpCalibrated: number | null;
 }
 
 type LivePartner = { id: string; sensor: "MODIS" | "VIIRS"; minutes: number; km: number | null };
@@ -191,6 +194,7 @@ export function liveDetail(raw: LiveFirms, id: string): LiveDetail | null {
     if (!modis && vi === index) return [{ id: `M${mi}`, sensor: "MODIS" as const, minutes, km: haversine({ lon: raw.modis[mi][0], lat: raw.modis[mi][1] }, { lon: raw.viirs[vi][0], lat: raw.viirs[vi][1] }) }];
     return [];
   });
+  const cluster = raw.clusters?.find((entry) => entry.member_ids.includes(id)) ?? null;
   return {
     id,
     sensor: modis ? "MODIS" : "VIIRS",
@@ -198,6 +202,9 @@ export function liveDetail(raw: LiveFirms, id: string): LiveDetail | null {
     lon: row[0], lat: row[1], minutesAfterBase: row[2], frp: row[3],
     confidence: modis ? `${row[4]}%` : LIVE_VIIRS_CLASSES[row[4]] ?? "nominal",
     partners,
+    clusterStatus: cluster?.match_status ?? null,
+    pModisDetect: cluster?.p_modis_detect ?? null,
+    frpCalibrated: cluster?.frp_calibrated ?? null,
   };
 }
 
