@@ -43,3 +43,4 @@ next-env.d.ts
 
 # copied from node_modules on predev/prebuild
 /public/maplibre-gl-worker.mjs
+/public/geo/
