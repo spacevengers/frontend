@@ -4,6 +4,7 @@ import type { ExpressionSpecification, FilterSpecification, GeoJSONSource, Map a
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { type Area, parseBbox } from "@/lib/area";
 import type { Bbox } from "@/lib/geo/world";
+import type { LiveGeoJSON } from "@/lib/firms/live";
 import { thermalTiles } from "@/lib/gibs";
 import type { Dataset } from "@/lib/sample/dataset";
 import { thresholds } from "@/lib/sample/stats";
@@ -48,7 +49,10 @@ interface Props {
   onDraw?: (bbox: Bbox | null) => void;
   onPickRecord?: (clusterId: string) => void;
   onPickObservation?: (detectionId: string) => void;
+  onPickLive?: (id: string) => void;
   onPickCountry?: (name: string) => void;
+  live?: LiveGeoJSON | null;
+  windowMinutes?: number;
 }
 
 const NO_FILTERS: LayerFilters = { viirs: [], modis: [], harm: [] };
@@ -58,15 +62,16 @@ export function MapView({
   ds, mi, theme, initialCamera, label, className = "mapbox", inset = false, center = null,
   filters = NO_FILTERS, visibility = ALL_VISIBLE, area = null, selectedPoint = null, overlay = null,
   drawing = false, onDraw, onPickRecord, onPickObservation, onPickCountry, projection = "mercator",
+  live = null, windowMinutes = 30, onPickLive,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const camera = useRef<Camera>(initialCamera);
   const fittedArea = useRef<Area | null>(null);
 
-  const handlers = useRef({ onPickRecord, onPickObservation, onPickCountry });
+  const handlers = useRef({ onPickRecord, onPickObservation, onPickCountry, onPickLive });
   useEffect(() => {
-    handlers.current = { onPickRecord, onPickObservation, onPickCountry };
+    handlers.current = { onPickRecord, onPickObservation, onPickCountry, onPickLive };
   });
 
   useEffect(() => {
@@ -105,10 +110,11 @@ export function MapView({
         });
         m.on("click", (e) => {
           const { x, y } = e.point;
-          const markers = MARKER_LAYERS.filter((id) => m.getLayer(id));
+          const markers = [...MARKER_LAYERS, "live-viirs", "live-modis"].filter((id) => m.getLayer(id));
           const hit = m.queryRenderedFeatures([[x - 5, y - 5], [x + 5, y + 5]], { layers: [...markers] })[0];
           if (hit) {
-            if (hit.layer.id === "harm") handlers.current.onPickRecord?.(String(hit.properties.cid));
+            if (hit.layer.id.startsWith("live-")) handlers.current.onPickLive?.(String(hit.properties.id));
+            else if (hit.layer.id === "harm") handlers.current.onPickRecord?.(String(hit.properties.cid));
             else handlers.current.onPickObservation?.(String(hit.properties.id));
             return;
           }
@@ -132,6 +138,47 @@ export function MapView({
       instance?.remove();
     };
   }, [ds, theme, inset]);
+
+  useEffect(() => {
+    if (!map || inset) return;
+    if (!map.getSource("live-points")) map.addSource("live-points", { type: "geojson", data: live?.points ?? { type: "FeatureCollection", features: [] } });
+    if (!map.getSource("live-links")) map.addSource("live-links", { type: "geojson", data: live?.links ?? { type: "FeatureCollection", features: [] } });
+
+    const before = "sel";
+    const addLayer = (layer: { id: string } & Record<string, unknown>) => {
+      if (!map.getLayer(layer.id)) {
+        map.addLayer(layer as Parameters<MapLibreMap["addLayer"]>[0], before);
+        if (layer.id === "live-viirs" || layer.id === "live-modis") {
+          map.on("mouseenter", layer.id, () => (map.getCanvas().style.cursor = "pointer"));
+          map.on("mouseleave", layer.id, () => (map.getCanvas().style.cursor = ""));
+        }
+      }
+    };
+    addLayer({ id: "live-heat", type: "heatmap", source: "live-points", maxzoom: 9, paint: {
+      "heatmap-weight": ["interpolate", ["linear"], ["get", "frp"], 0, 0.1, 30, 0.6],
+      "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 1, 0.65, 6, 1.15],
+      "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 1, 6, 4, 16, 7, 26],
+      "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(0,0,0,0)", 0.08, "rgba(74,18,101,0.55)", 0.25, "#8E1F6E", 0.45, "#D2344F", 0.65, "#F5702A", 0.85, "#FFB833", 1, "#FFF1B8"],
+      "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 3, 0.95, 6.5, 0.36],
+    } });
+    addLayer({ id: "live-link-glow", type: "line", source: "live-links", minzoom: 3, paint: { "line-color": "#F5702A", "line-width": ["interpolate", ["linear"], ["zoom"], 4, 3, 10, 10], "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 2, 10, 8], "line-opacity": 0.55 } });
+    addLayer({ id: "live-link", type: "line", source: "live-links", minzoom: 3, paint: { "line-color": "#FFF1B8", "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.7, 10, 1.8], "line-opacity": 0.9 } });
+    addLayer({ id: "live-viirs", type: "circle", source: "live-points", filter: ["==", ["get", "sensor"], "VIIRS"], minzoom: 4.5, paint: { "circle-color": "#F5702A", "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 2.3, 10, 6], "circle-stroke-color": "#fff1b8", "circle-stroke-width": 0.7 } });
+    addLayer({ id: "live-modis", type: "circle", source: "live-points", filter: ["==", ["get", "sensor"], "MODIS"], minzoom: 4.5, paint: { "circle-color": "#44C9F4", "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 3.2, 10, 7], "circle-stroke-color": "#fff", "circle-stroke-width": 1 } });
+
+    const pointSource = map.getSource<GeoJSONSource>("live-points");
+    const linkSource = map.getSource<GeoJSONSource>("live-links");
+    pointSource?.setData(live?.points ?? { type: "FeatureCollection", features: [] });
+    linkSource?.setData(live?.links ?? { type: "FeatureCollection", features: [] });
+    const paired: FilterSpecification = ["<=", ["get", "dt"], windowMinutes];
+    map.setFilter("live-link", paired);
+    map.setFilter("live-link-glow", paired);
+    const sampleLayerIds = ["heat", "link-glow", "link", "viirs-glow", "viirs", "modis", "harm"];
+    for (const id of sampleLayerIds) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", live ? "none" : "visible");
+    for (const id of ["live-heat", "live-link", "live-link-glow", "live-viirs", "live-modis"]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", live ? "visible" : "none");
+    }
+  }, [map, live, windowMinutes, inset]);
 
   useEffect(() => {
     if (!map) return;

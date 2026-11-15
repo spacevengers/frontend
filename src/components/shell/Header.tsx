@@ -8,6 +8,7 @@ import { exportMonth } from "@/lib/export";
 import { loadDataset } from "@/lib/sample/dataset";
 import { setTheme, useTheme } from "@/lib/theme";
 import { parseViewState } from "@/lib/view-state";
+import { hasCountryArchive } from "@/lib/history/client";
 
 const VIEWS = [
   { href: "/", label: "Globe" },
@@ -32,7 +33,7 @@ function Brand({ href }: { href: string }) {
   );
 }
 
-function Shell({ query, pathname, onExport }: { query: string; pathname: string | null; onExport?: () => void }) {
+function Shell({ query, pathname, onExport, archiveAvailable = false }: { query: string; pathname: string | null; onExport?: () => void; archiveAvailable?: boolean }) {
   const theme = useTheme();
   const next = theme === "dark" ? "light" : "dark";
   const suffix = query ? `?${query}` : "";
@@ -47,13 +48,13 @@ function Shell({ query, pathname, onExport }: { query: string; pathname: string 
         ))}
       </nav>
       <div className="actions">
-        <span className="tag">Sample data</span>
+        <span className="tag">Map/globe: sample or live · calendar: {archiveAvailable ? "NASA FIRMS archive" : "sample"}</span>
         <button className="btn" type="button" onClick={() => setTheme(next)} aria-label={`Switch to ${next} theme`}>
           <span aria-hidden="true">{next === "light" ? "☀" : "☾"}</span>
           <span>{next === "light" ? "Light theme" : "Dark theme"}</span>
         </button>
         <button className="btn solid" type="button" onClick={onExport} disabled={!onExport}>
-          Export
+          Export sample
         </button>
       </div>
     </header>
@@ -63,6 +64,7 @@ function Shell({ query, pathname, onExport }: { query: string; pathname: string 
 export function Header() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const view = parseViewState(searchParams);
 
   async function onExport() {
     const view = parseViewState(new URLSearchParams(window.location.search));
@@ -70,7 +72,7 @@ export function Header() {
     exportMonth(ds, view.mi, resolveArea(view, ds.world));
   }
 
-  return <Shell query={searchParams.toString()} pathname={pathname} onExport={onExport} />;
+  return <Shell query={searchParams.toString()} pathname={pathname} onExport={onExport} archiveAvailable={hasCountryArchive(view.country)} />;
 }
 
 export function HeaderFallback() {

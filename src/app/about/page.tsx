@@ -19,18 +19,22 @@ export default function AboutPage() {
           <li>A hotspot is a satellite detection of heat, not a confirmed fire. One fire can produce many detections, and some detections are not fires.</li>
           <li>A detection seen by only one sensor is not an error. The sensors differ in resolution and in the time they pass overhead.</li>
           <li>Agreement between the sensors is internal consistency, not accuracy against ground truth.</li>
+          <li>Live pairs use the project&apos;s spatial limit and a selectable 30–180 minute time window. A pair means possible correspondence, not proof that two detections came from the same fire.</li>
+          <li>Live data covers the latest 24 hours in the available NASA files. Missing source files or their update cadence can make a snapshot incomplete or delayed.</li>
         </ul>
       </section>
 
       <section>
         <h2>What is real and what is sample</h2>
         <p>
-          While the header shows the <span className="tag">Sample data</span> tag, the markers, counts, calendar and charts are generated
-          placeholder data shaped like FIRMS records. They are not real detections.
+          In Sample history mode on the map or globe, and on the calendar screen, the markers, counts, and charts use generated placeholder
+          data shaped like FIRMS records. They are not real detections.
         </p>
         <p>
-          Two things are real today: the Blue Marble imagery, and the &ldquo;Real NASA detections&rdquo; layer on the map, which shows
-          NASA&apos;s published thermal-anomaly layers for a chosen day.
+          In <strong>Live · last 24 h</strong> mode on the map or globe, markers and counts come from NASA FIRMS&apos; public global CSV files.
+          The same-origin endpoint downloads those files on the server and caches the result for 30 minutes. Each source&apos;s row
+          count, last-modified time, and availability are shown so partial snapshots are visible. The GIBS thermal-anomaly overlay
+          in Sample history is a separate NASA product for a selected date.
         </p>
       </section>
 
