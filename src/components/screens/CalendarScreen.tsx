@@ -16,6 +16,7 @@ import { useDataset } from "@/lib/sample/use-dataset";
 import { useTheme } from "@/lib/theme";
 import { useArea } from "@/lib/use-area";
 import { useViewState } from "@/lib/view-state";
+import { archiveComparison, archiveMonthStats, useArchiveSummary } from "@/lib/history/client";
 
 type RecordSet = "harmonized" | "modis" | "viirs";
 type Scale = "count" | "anomaly";
@@ -61,13 +62,23 @@ export function CalendarScreen() {
   const { ds, status, error } = useDataset();
   const theme = useTheme();
   const area = useArea(ds?.world ?? null, view);
+  const archive = useArchiveSummary(area?.kind === "country" ? area.name : null);
   const { mi } = view;
   const [set, setSet] = useState<RecordSet>("harmonized");
   const [scale, setScale] = useState<Scale>("count");
   const [tip, setTip] = useState<{ m: number; x: number; y: number } | null>(null);
 
-  const months = useMemo<MonthStats[]>(() => (ds ? Array.from({ length: MONTH_COUNT }, (_, m) => statsFor(ds, m, area)) : []), [ds, area]);
-  const comparison = useMemo(() => (ds ? comparisonFor(ds, mi, area) : null), [ds, mi, area]);
+  const archiveMonths = area?.kind === "country" && archive.value?.country === area.name ? archive.value.months : null;
+  const months = useMemo<MonthStats[]>(() => (ds ? Array.from({ length: MONTH_COUNT }, (_, m) => {
+    const archived = archiveMonths?.[`${FIRST_YEAR + Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, "0")}`];
+    return archived ? archiveMonthStats(archived) : statsFor(ds, m, area);
+  }) : []), [ds, area, archiveMonths]);
+  const comparison = useMemo(() => {
+    if (!ds) return null;
+    const key = `${FIRST_YEAR + Math.floor(mi / 12)}-${String((mi % 12) + 1).padStart(2, "0")}`;
+    const archived = archiveMonths?.[key];
+    return archived ? archiveComparison(archived) : comparisonFor(ds, mi, area);
+  }, [ds, mi, area, archiveMonths]);
 
   if (!ds || !comparison) {
     return (
@@ -117,6 +128,7 @@ export function CalendarScreen() {
         <div className="mb-3 flex flex-wrap items-center gap-2.5">
           <span className="chip">Area · {areaLabel(area)} · {monthLabel(mi)}</span>
           <Link className="muted text-xs" href={`/map${query ? `?${query}` : ""}`}>Change area on the map</Link>
+          {archiveMonths ? <span className="chip">NASA FIRMS archive</span> : area?.kind === "country" && archive.loading ? <span className="muted text-xs">Checking NASA FIRMS archive…</span> : null}
           {area ? (
             <button className="muted cursor-pointer text-xs underline" type="button" onClick={() => setView({ country: null, bbox: null })}>Whole world</button>
           ) : null}
@@ -241,7 +253,7 @@ export function CalendarScreen() {
           <div className="flex flex-col gap-3.5">
             {[
               { value: percent(stats.aquaPaired, stats.aqua), label: "MODIS Aqua detections with a VIIRS partner", note: `${fmt(stats.aquaPaired)} of ${fmt(stats.aqua)}` },
-              { value: percent(0, stats.terra), label: "MODIS Terra detections with a VIIRS partner", note: `Terra passes about 3 h before VIIRS, so it cannot pair within ±${MATCHING_RULE.maxMinutes} min` },
+              { value: percent(stats.terraPaired, stats.terra), label: "MODIS Terra detections with a VIIRS partner", note: `${fmt(stats.terraPaired)} of ${fmt(stats.terra)}` },
               { value: percent(stats.viirsPaired, stats.viirs), label: "VIIRS detections with a MODIS partner", note: `${fmt(stats.viirsPaired)} of ${fmt(stats.viirs)}` },
               { value: `${comparison.medianKm.toFixed(2)} km`, label: "Median distance apart" },
               { value: `${Math.round(comparison.medianMinutes)} min`, label: "Median time difference" },

@@ -21,6 +21,7 @@ export interface MonthStats {
   aqua: number;
   aquaPaired: number;
   terra: number;
+  terraPaired: number;
   viirsPaired: number;
   byCountry: Record<string, number>;
   byRegion: Record<number, number>;
@@ -30,7 +31,7 @@ export function statsFor(ds: Dataset, mi: number, area: Area | null): MonthStats
   const t = thresholds(mi);
   const s: MonthStats = {
     harmonized: 0, modis: 0, viirs: 0, pairs: 0, modisOnly: 0, viirsOnly: 0,
-    aqua: 0, aquaPaired: 0, terra: 0, viirsPaired: 0, byCountry: {}, byRegion: {},
+    aqua: 0, aquaPaired: 0, terra: 0, terraPaired: 0, viirsPaired: 0, byCountry: {}, byRegion: {},
   };
   for (const c of ds.clusters) {
     if (c.u >= t[c.r] || !inArea(area, c)) continue;
