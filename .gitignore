@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+/docs
+/public/img
+
 # next.js
 /.next/
 /out/
