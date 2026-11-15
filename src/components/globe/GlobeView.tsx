@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Area } from "@/lib/area";
 import { densityColor } from "@/lib/color";
 import { fmt } from "@/lib/format";
-import { type AreaGeometry, bboxOf, contains, type CountryFeature, inBbox } from "@/lib/geo/world";
+import { type AreaGeometry, bboxOf, contains, inBbox } from "@/lib/geo/world";
 import { blueMarbleCrop, blueMarbleImage } from "@/lib/gibs";
 import { HOME } from "@/lib/home";
 import type { Dataset } from "@/lib/sample/dataset";
@@ -79,39 +79,6 @@ function calloutElement(c: GlobeCallout) {
   return root;
 }
 
-function lightTexture(countries: CountryFeature[]): Promise<string | null> {
-  const width = 4096;
-  const height = 2048;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const g = canvas.getContext("2d");
-  if (!g) return Promise.resolve(null);
-  g.fillStyle = "#B9D3EE";
-  g.fillRect(0, 0, width, height);
-  g.fillStyle = "#F7FAFD";
-  g.strokeStyle = "rgba(15,42,71,0.28)";
-  g.lineWidth = 1.2;
-  for (const f of countries) {
-    const polygons = f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
-    g.beginPath();
-    for (const polygon of polygons) {
-      for (const ring of polygon) {
-        ring.forEach(([lon, lat], i) => {
-          const x = ((lon + 180) / 360) * width;
-          const y = ((90 - lat) / 180) * height;
-          if (i === 0) g.moveTo(x, y);
-          else g.lineTo(x, y);
-        });
-        g.closePath();
-      }
-    }
-    g.fill("evenodd");
-    g.stroke();
-  }
-  return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob ? URL.createObjectURL(blob) : null), "image/png"));
-}
-
 export function GlobeView({ ds, points, area, theme, callout, label, onPickCountry }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const [globe, setGlobe] = useState<GlobeInstance | null>(null);
@@ -179,29 +146,17 @@ export function GlobeView({ ds, points, area, theme, callout, label, onPickCount
 
   useEffect(() => {
     if (!globe) return;
-    let objectUrl: string | null = null;
-    let cancelled = false;
-    const material = globe.globeMaterial() as unknown as { color: { set(color: string): void } };
+    const material = globe.globeMaterial() as unknown as { color: { set(color: string): void } | null };
     if (theme === "dark") {
-      material.color.set("#AEB7C2");
+      // globe.gl clears this tint after its image texture loads, so it may be null on later theme updates.
+      material.color?.set("#AEB7C2");
       globe.globeImageUrl(blueMarbleImage(4096, 2048)).atmosphereColor("#3D86E0");
     } else {
-      material.color.set("#FFFFFF");
+      material.color?.set("#FFFFFF");
       globe.atmosphereColor("#9CC4EE");
-      lightTexture(ds.world.land.features).then((url) => {
-        if (cancelled || !url) {
-          if (url) URL.revokeObjectURL(url);
-          return;
-        }
-        objectUrl = url;
-        globe.globeImageUrl(url);
-      });
+      globe.globeImageUrl(blueMarbleImage(4096, 2048));
     }
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [globe, theme, ds]);
+  }, [globe, theme]);
 
   useEffect(() => {
     if (!globe) return;
