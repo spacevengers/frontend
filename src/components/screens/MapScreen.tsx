@@ -10,7 +10,9 @@ import { capitalize, fmt, fmtLat, fmtLon } from "@/lib/format";
 import { isIsoDate, THERMAL_LAYERS, type ThermalLayerId } from "@/lib/gibs";
 import { EMPTY_LIVE_GEOJSON, liveDetail, liveStats, useLiveFirms, useLiveGeoJSON } from "@/lib/firms/live";
 import { HOME } from "@/lib/home";
-import { FIRST_YEAR, fromYearMonth, LAST_YEAR, monthLabel, toYearMonth } from "@/lib/period";
+import { FIRST_YEAR, fromYearMonth, LAST_YEAR, monthBounds, monthLabel, toYearMonth } from "@/lib/period";
+import { BACKEND_CONFIGURED, useBackendFirms } from "@/lib/backend/live";
+import type { Filters } from "@/lib/types";
 import { type Cluster, type Dataset, type Detection, REGIONS } from "@/lib/sample/dataset";
 import { recordDetail, statsFor, thresholds } from "@/lib/sample/stats";
 import { useDataset } from "@/lib/sample/use-dataset";
@@ -156,7 +158,7 @@ function Explorer({ ds }: { ds: Dataset }) {
   const { mi } = view;
 
   const [status, setStatus] = useState<Status>("all");
-  const [dataMode, setDataMode] = useState<"sample" | "live">("live");
+  const [dataMode, setDataMode] = useState<"sample" | "live" | "backend">("live");
   const [windowMinutes, setWindowMinutes] = useState(30);
   const [satellite, setSatellite] = useState("all");
   const [modisMin, setModisMin] = useState(0);
@@ -174,15 +176,24 @@ function Explorer({ ds }: { ds: Dataset }) {
   const [projection, setProjection] = useState<"mercator" | "globe">("mercator");
 
   const sampleStats = useMemo(() => statsFor(ds, mi, area), [ds, mi, area]);
-  const liveState = useLiveFirms(true);
+  const liveState = useLiveFirms(dataMode === "live");
+  const backendFilters = useMemo<Filters | null>(() => {
+    if (dataMode !== "backend") return null;
+    const [start, end] = monthBounds(mi);
+    return { start, end, sensors: ["MODIS", "VIIRS"], bbox: area?.bbox ?? [33.5, -5, 42, 5.5] };
+  }, [dataMode, mi, area?.bbox]);
+  const backendState = useBackendFirms(dataMode === "backend", backendFilters);
   const archiveState = useArchiveMonth(dataMode === "sample" && area?.kind === "country" ? area.name : null, mi);
   const archiveActive = dataMode === "sample" && area?.kind === "country" && archiveState.value?.country === area.name;
   const archiveRaw = useMemo(() => archiveActive && archiveState.value ? archiveLiveShape(archiveState.value) : null, [archiveActive, archiveState.value]);
-  const displayRaw = dataMode === "live" ? liveState.data : archiveRaw;
+  const displayRaw = dataMode === "live" ? liveState.data : dataMode === "backend" ? backendState.data : archiveRaw;
   const liveMap = useLiveGeoJSON(displayRaw);
   const liveSummary = useMemo(() => displayRaw ? liveStats(displayRaw, area, windowMinutes) : null, [displayRaw, area, windowMinutes]);
-  const displayStats = archiveActive && liveSummary ? { ...sampleStats, modis: liveSummary.modis, viirs: liveSummary.viirs, pairs: liveSummary.pairs, harmonized: liveSummary.modis + liveSummary.viirs - liveSummary.pairedViirs } : sampleStats;
-  const incompleteSources = liveState.data?.sources.filter((source) => !source.ok || source.rows === 0 || isSourceStale(source.updated)) ?? [];
+  const remoteState = dataMode === "live" ? liveState : dataMode === "backend" ? backendState : null;
+  const remoteActive = dataMode === "live" || dataMode === "backend" || archiveActive;
+  const remoteStats = liveSummary ? { ...sampleStats, modis: liveSummary.modis, viirs: liveSummary.viirs, pairs: liveSummary.pairs, harmonized: liveSummary.modis + liveSummary.viirs - liveSummary.pairedViirs } : sampleStats;
+  const displayStats = (archiveActive || dataMode === "backend") && liveSummary ? remoteStats : sampleStats;
+  const incompleteSources = remoteState?.data?.sources.filter((source) => !source.ok || source.rows === 0 || isSourceStale(source.updated)) ?? [];
 
   const filters = useMemo<LayerFilters>(() => {
     const f: LayerFilters = { viirs: [], modis: [], harm: [] };
@@ -261,7 +272,7 @@ function Explorer({ ds }: { ds: Dataset }) {
         area={area}
         selectedPoint={selectedPoint}
         overlay={overlay}
-        live={dataMode === "live" || archiveActive ? liveMap ?? EMPTY_LIVE_GEOJSON : null}
+        live={dataMode !== "sample" || archiveActive ? liveMap ?? EMPTY_LIVE_GEOJSON : null}
         windowMinutes={windowMinutes}
         drawing={drawing}
         onDraw={(bbox) => {
@@ -293,8 +304,9 @@ function Explorer({ ds }: { ds: Dataset }) {
         <div className="seg" role="group" aria-label="Data source">
           <button type="button" aria-pressed={dataMode === "sample"} onClick={() => { setSelection(null); setDataMode("sample"); }}>{archiveActive ? "NASA FIRMS archive" : "Sample history"}</button>
           <button type="button" aria-pressed={dataMode === "live"} onClick={() => { setSelection(null); setDataMode("live"); }}>Live · last 24 h</button>
+          {BACKEND_CONFIGURED ? <button type="button" aria-pressed={dataMode === "backend"} onClick={() => { setSelection(null); setDataMode("backend"); }}>Backend · month</button> : null}
         </div>
-        {dataMode === "live" ? (
+        {dataMode !== "sample" ? (
           <span className="pill">
             <label htmlFor="f-window">Pair window</label>
             <select id="f-window" value={windowMinutes} onChange={(e) => setWindowMinutes(Number(e.target.value))}>
@@ -347,13 +359,13 @@ function Explorer({ ds }: { ds: Dataset }) {
 
       <div className="overlay">
         <aside className="side" aria-label="Summary and layers">
-          <Panel title="Overview" aside={dataMode === "live" ? "Live · last 24 h" : archiveActive ? "NASA FIRMS archive" : monthLabel(mi)}>
+          <Panel title="Overview" aside={dataMode === "live" ? "Live · last 24 h" : dataMode === "backend" ? `Backend · ${monthLabel(mi)}` : archiveActive ? "NASA FIRMS archive" : monthLabel(mi)}>
             <div className="flex flex-col gap-2.5">
               <span className="chip self-start">Area · {areaLabel(area)}</span>
               <div>
-                {dataMode === "live" ? <>
-                  <div className="kpi-big num" style={{ fontSize: 42 }}>{liveSummary ? fmt(liveSummary.modis + liveSummary.viirs) : liveState.loading ? "…" : "—"}</div>
-                  <div className="kpi-label">real detections in the last 24 hours</div>
+                {dataMode !== "sample" ? <>
+                  <div className="kpi-big num" style={{ fontSize: 42 }}>{liveSummary ? fmt(liveSummary.modis + liveSummary.viirs) : remoteState?.loading ? "…" : "—"}</div>
+                  <div className="kpi-label">{dataMode === "backend" ? "backend detections in the selected month" : "real detections in the last 24 hours"}</div>
                   <p className="note">MODIS {fmt(liveSummary?.modis ?? 0)} · VIIRS {fmt(liveSummary?.viirs ?? 0)}</p>
                 </> : <>
                   <div className="kpi-big num" style={{ fontSize: 42 }}>{fmt(displayStats.harmonized)}</div>
@@ -361,21 +373,21 @@ function Explorer({ ds }: { ds: Dataset }) {
                 </>}
               </div>
               {dataMode === "sample" && archiveState.loading ? <p className="note" role="status">Loading NASA FIRMS archive…</p> : null}
-              {dataMode === "live" && liveState.loading ? <p className="note" role="status">Fetching NASA FIRMS data…</p> : null}
-              {dataMode === "live" && liveState.error ? <p className="note" role="alert">{liveState.error} <button className="btn sm" type="button" onClick={liveState.retry}>Retry</button></p> : null}
-              {dataMode === "live" && liveState.data ? <>
-                <p className="note">Snapshot generated {new Date(liveState.data.generatedAt).toLocaleString()} · server cache may be up to 30 minutes old.</p>
-              {incompleteSources.length ? <p className="note" role="status">{incompleteSources.length} FIRMS source file{incompleteSources.length === 1 ? " is" : "s are"} empty, unavailable, or more than 24 hours old; live counts may be incomplete or stale.</p> : null}
+              {remoteState?.loading ? <p className="note" role="status">{dataMode === "backend" ? "Loading backend data…" : "Fetching NASA FIRMS data…"}</p> : null}
+              {remoteState?.error ? <p className="note" role="alert">{remoteState.error} <button className="btn sm" type="button" onClick={remoteState.retry}>Retry</button></p> : null}
+              {remoteState?.data ? <>
+                <p className="note">Snapshot generated {new Date(remoteState.data.generatedAt).toLocaleString()}{dataMode === "live" ? " · server cache may be up to 30 minutes old" : ""}.</p>
+              {incompleteSources.length ? <p className="note" role="status">{incompleteSources.length} source file{incompleteSources.length === 1 ? " is" : "s are"} empty, unavailable, or more than 24 hours old; counts may be incomplete or stale.</p> : null}
               </> : null}
             </div>
           </Panel>
 
-          <Panel title="Layers" aside={dataMode === "live" || archiveActive ? "NASA FIRMS" : "generated sample"}>
-            {(dataMode === "live" || archiveActive) && liveSummary ? <>
+          <Panel title="Layers" aside={remoteActive ? (dataMode === "backend" ? "Backend" : "NASA FIRMS") : "generated sample"}>
+            {remoteActive && liveSummary ? <>
               {liveSummary.modisBySatellite.map((row) => <div className="layer" style={{ gridTemplateColumns: "auto 1fr auto", cursor: "default" }} key={row.satellite}><i className="sw sq" /><span>MODIS · {row.satellite}</span><span className="num muted">{fmt(row.count)} · {fmt(row.paired)} paired</span></div>)}
               {liveSummary.viirsBySatellite.map((row) => <div className="layer" style={{ gridTemplateColumns: "auto 1fr auto", cursor: "default" }} key={row.satellite}><i className="sw ci" /><span>VIIRS · {row.satellite}</span><span className="num muted">{fmt(row.count)} · {fmt(row.paired)} paired</span></div>)}
-              <p className="note">Heat density, detections, and pair links are real FIRMS observations.</p>
-              {dataMode === "live" ? liveState.data?.sources.map((source) => <p className="note" key={source.name}>{source.name}: {source.ok ? `${fmt(source.rows)} rows${source.updated ? ` · updated ${source.updated}` : ""}${source.rows === 0 ? " · empty" : ""}${isSourceStale(source.updated) ? " · stale" : ""}` : "unavailable"}</p>) : <p className="note">Historical NASA FIRMS detections for {area?.kind === "country" ? area.name : "selected area"}, {monthLabel(mi)}.</p>}
+              <p className="note">Heat density, detections, and pair links are real {dataMode === "backend" ? "backend" : "FIRMS"} observations.</p>
+              {dataMode === "live" ? liveState.data?.sources.map((source) => <p className="note" key={source.name}>{source.name}: {source.ok ? `${fmt(source.rows)} rows${source.updated ? ` · updated ${source.updated}` : ""}${source.rows === 0 ? " · empty" : ""}${isSourceStale(source.updated) ? " · stale" : ""}` : "unavailable"}</p>) : dataMode === "backend" ? remoteState?.data?.sources.map((source) => <p className="note" key={source.name}>{source.name}: {fmt(source.rows)} rows</p>) : <p className="note">Historical NASA FIRMS detections for {area?.kind === "country" ? area.name : "selected area"}, {monthLabel(mi)}.</p>}
             </> : dataMode === "sample" ? layerRows.map((row) => (
               <label className="layer" key={row.key}>
                 <input type="checkbox" checked={layers[row.key]} onChange={(e) => setLayers({ ...layers, [row.key]: e.target.checked })} />
@@ -404,8 +416,8 @@ function Explorer({ ds }: { ds: Dataset }) {
             </p>
           </Panel> : null}
 
-          <Panel title="Seen by both sensors, or one" aside={dataMode === "live" && liveSummary ? `${fmt(liveSummary.pairs)} pair links` : undefined}>
-            {(dataMode === "live" || archiveActive) && liveSummary ? <>
+          <Panel title="Seen by both sensors, or one" aside={remoteActive && liveSummary ? `${fmt(liveSummary.pairs)} pair links` : undefined}>
+            {remoteActive && liveSummary ? <>
               <SplitBars rows={[
                 { label: "Matched detections", value: liveSummary.pairedModis + liveSummary.pairedViirs, color: "var(--magma-5)" },
                 { label: "MODIS only", value: liveSummary.modis - liveSummary.pairedModis, color: "var(--cool)" },
@@ -413,7 +425,7 @@ function Explorer({ ds }: { ds: Dataset }) {
               ]} />
               <p className="note">Pair links indicate a possible match within {windowMinutes} minutes and {displayRaw?.rule.maxKm} km. Detections outside the window remain visible as unmatched.</p>
               {liveSummary.medianKm !== null ? <p className="note">Median pair distance {liveSummary.medianKm.toFixed(2)} km; median time gap {liveSummary.medianMinutes?.toFixed(0)} min.</p> : null}
-              {dataMode === "live" ? <p className="note">Aqua and Terra pass at different times from VIIRS, so a 30-minute window can leave detections unmatched; this does not mean no fire was detected.</p> : null}
+              {dataMode !== "sample" ? <p className="note">Aqua and Terra pass at different times from VIIRS, so a 30-minute window can leave detections unmatched; this does not mean no fire was detected.</p> : null}
             </> : dataMode === "sample" ? <SplitBars
               rows={[
                 { label: "Potentially corresponding pairs", value: sampleStats.pairs, color: "var(--magma-5)" },
@@ -447,12 +459,12 @@ function Explorer({ ds }: { ds: Dataset }) {
             </p>
           </Panel>
 
-          <Panel title={dataMode === "live" ? "Export" : archiveActive ? "Export NASA FIRMS archive" : "Export sample history"}>
+          <Panel title={dataMode === "live" ? "Export" : dataMode === "backend" ? "Backend export" : archiveActive ? "Export NASA FIRMS archive" : "Export sample history"}>
             <div className="flex flex-wrap gap-2">
-              <button className="btn sm" type="button" disabled={dataMode === "live" || archiveActive} title={dataMode === "live" ? "Live CSV export is not available yet" : archiveActive ? "Archive CSV export is not available yet" : undefined} onClick={() => exportMonth(ds, mi, area)}>CSV</button>
+              <button className="btn sm" type="button" disabled={dataMode !== "sample" || archiveActive} title={dataMode === "backend" ? "Use the backend export API" : dataMode === "live" ? "Live CSV export is not available yet" : archiveActive ? "Archive CSV export is not available yet" : undefined} onClick={() => exportMonth(ds, mi, area)}>CSV</button>
               <button className="btn sm" type="button" disabled title="Needs the backend export endpoint">GeoJSON</button>
             </div>
-            {dataMode === "live" ? <p className="note">CSV export is available in Sample history.</p> : archiveActive ? <p className="note">CSV export is not available for archive detections yet.</p> : null}
+            {dataMode === "live" ? <p className="note">CSV export is available in Sample history.</p> : dataMode === "backend" ? <p className="note">Use the backend <code>/api/exports</code> endpoint for this dataset.</p> : archiveActive ? <p className="note">CSV export is not available for archive detections yet.</p> : null}
           </Panel>
         </aside>
 
@@ -473,9 +485,9 @@ function Explorer({ ds }: { ds: Dataset }) {
           <Panel title="Legend">
             <div className="flex flex-col gap-3">
               <div className="markers flex-col items-start">
-                <span><i className="sw sq" />MODIS detection, 1 km{archiveActive ? " · NASA FIRMS archive" : dataMode === "sample" ? " · sample" : " · FIRMS"}</span>
-                <span><i className="sw ci" />VIIRS detection, 375 m{archiveActive ? " · NASA FIRMS archive" : dataMode === "sample" ? " · sample" : " · FIRMS"}</span>
-                <span><i className="sw ln" />{archiveActive ? `Archive pairs · ≤ ${windowMinutes} min` : dataMode === "sample" ? "Potentially corresponding" : `FIRMS pairs · ≤ ${windowMinutes} min`}</span>
+                <span><i className="sw sq" />MODIS detection, 1 km{archiveActive ? " · NASA FIRMS archive" : dataMode === "sample" ? " · sample" : dataMode === "backend" ? " · backend" : " · FIRMS"}</span>
+                <span><i className="sw ci" />VIIRS detection, 375 m{archiveActive ? " · NASA FIRMS archive" : dataMode === "sample" ? " · sample" : dataMode === "backend" ? " · backend" : " · FIRMS"}</span>
+                <span><i className="sw ln" />{archiveActive ? `Archive pairs · ≤ ${windowMinutes} min` : dataMode === "sample" ? "Potentially corresponding" : `${dataMode === "backend" ? "Backend" : "FIRMS"} pairs · ≤ ${windowMinutes} min`}</span>
                 {dataMode === "sample" && !archiveActive ? <span><i className="sw di" />Harmonized record</span> : null}
               </div>
               <div className="legend">

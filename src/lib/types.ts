@@ -1,21 +1,20 @@
-// Data contract shared with the backend. Mirrors section 7.3 of the project spec.
-// When the backend publishes its real schema, update this file first; the
-// compiler will point at every component that needs to change.
+// Frontend-facing contract. Backend view adapters in
+// backend/internal/api/handlers_integration.go preserve these shapes.
 
 export type Sensor = "MODIS" | "VIIRS";
 
-/** One original detection, exactly as a sensor reported it (spec §7.3). */
+/** One original detection, exactly as a sensor reported it. */
 export interface Observation {
   observation_id: string;
   sensor: Sensor;
-  satellite: string; // "Aqua" | "Terra" | "N" (S-NPP) | "N20" | "N21"
+  satellite: string; // Terra, Aqua, S-NPP, NOAA-20, NOAA-21
   latitude: number;
   longitude: number;
   acquired_at: string; // ISO 8601, UTC
   /** Original value, NOT comparable across sensors: MODIS 0-100, VIIRS "l"|"n"|"h". */
   confidence: number | "l" | "n" | "h";
-  frp: number; // MW, as reported
-  daynight: "D" | "N";
+  frp: number; // MW, as reported; 0 when the source did not report FRP
+  daynight: "D" | "N" | "";
   source_product: string; // e.g. "MODIS_SP", "VIIRS_SNPP_SP"
 }
 
@@ -23,10 +22,12 @@ export type MatchStatus = "matched" | "viirs_only" | "modis_only";
 
 /**
  * One harmonized hotspot: a cluster of observations that probably correspond
- * to the same fire activity. Proposed contract; agree it with backend + ML.
+ * to the same fire activity.
  */
 export interface HarmonizedObservation {
   harmonized_id: string;
+  cluster_uid: string;
+  run_id: number;
   latitude: number;
   longitude: number;
   acquired_at: string;
@@ -36,8 +37,11 @@ export interface HarmonizedObservation {
   n_modis: number;
   frp_viirs_sum: number | null; // summed VIIRS FRP in the MODIS footprint
   frp_modis: number | null;
-  /** ML output: P(MODIS would detect this footprint). One scale for both sensors. */
+  /** ML output: P(MODIS would detect this footprint). Null until produced. */
   p_modis_detect: number | null;
+  /** ML output: calibrated FRP, kept separate from the source values. */
+  frp_calibrated: number | null;
+  prediction_model: string | null;
 }
 
 export interface Filters {

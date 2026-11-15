@@ -36,6 +36,11 @@ export default function AboutPage() {
           count, last-modified time, and availability are shown so partial snapshots are visible. The GIBS thermal-anomaly overlay
           in Sample history is a separate NASA product for a selected date.
         </p>
+        <p>
+          In <strong>Backend · month</strong> mode, the map and globe read the project backend for the selected month and area. If the
+          backend has imported harmonization predictions, the selected-record panel can show a calibrated probability and FRP; until
+          then those fields remain marked as not produced.
+        </p>
       </section>
 
       <section>

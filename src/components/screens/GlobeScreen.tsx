@@ -9,7 +9,9 @@ import { LoadState, Panel, Provenance, SplitBars } from "@/components/Panel";
 import { areaLabel } from "@/lib/area";
 import { fmt } from "@/lib/format";
 import { isLiveSourceStale, liveStats, useLiveFirms } from "@/lib/firms/live";
-import { FIRST_YEAR, LAST_YEAR, MONTH_COUNT, monthLabel, monthShort, YEARS, yearOf } from "@/lib/period";
+import { BACKEND_CONFIGURED, useBackendFirms } from "@/lib/backend/live";
+import type { Filters } from "@/lib/types";
+import { FIRST_YEAR, LAST_YEAR, MONTH_COUNT, monthBounds, monthLabel, monthShort, YEARS, yearOf } from "@/lib/period";
 import { MATCHING_RULE } from "@/lib/sample/dataset";
 import { busiestRegion, densityPoints, statsFor } from "@/lib/sample/stats";
 import { useDataset } from "@/lib/sample/use-dataset";
@@ -34,10 +36,18 @@ export function GlobeScreen() {
   const theme = useTheme();
   const area = useArea(ds?.world ?? null, view);
   const { mi } = view;
-  const [dataMode, setDataMode] = useState<"sample" | "live">("live");
+  const [dataMode, setDataMode] = useState<"sample" | "live" | "backend">("live");
   const [playing, setPlaying] = useState(false);
-  const liveState = useLiveFirms(true);
-  const liveSummary = useMemo(() => liveState.data ? liveStats(liveState.data, area, 30) : null, [liveState.data, area]);
+  const liveState = useLiveFirms(dataMode === "live");
+  const backendFilters = useMemo<Filters | null>(() => {
+    if (dataMode !== "backend") return null;
+    const [start, end] = monthBounds(mi);
+    return { start, end, sensors: ["MODIS", "VIIRS"], bbox: area?.bbox ?? [33.5, -5, 42, 5.5] };
+  }, [dataMode, mi, area?.bbox]);
+  const backendState = useBackendFirms(dataMode === "backend", backendFilters);
+  const remoteState = dataMode === "live" ? liveState : dataMode === "backend" ? backendState : null;
+  const displayRaw = remoteState?.data ?? null;
+  const liveSummary = useMemo(() => displayRaw ? liveStats(displayRaw, area, 30) : null, [displayRaw, area]);
 
   useEffect(() => {
     if (!playing) return;
@@ -54,22 +64,22 @@ export function GlobeScreen() {
   const year = Math.floor(mi / 12);
   const yearStats = useMemo(() => (dataMode === "sample" && ds ? Array.from({ length: 12 }, (_, k) => statsFor(ds, year * 12 + k, area)) : []), [dataMode, ds, year, area]);
   const points = useMemo(() => {
-    if (dataMode === "live") {
-      if (!liveState.data) return [];
+    if (dataMode !== "sample") {
+      if (!displayRaw) return [];
       return [
-        ...liveState.data.modis.map((row) => ({ lat: row[1], lng: row[0], w: 1 })),
-        ...liveState.data.viirs.map((row) => ({ lat: row[1], lng: row[0], w: 1 })),
+        ...displayRaw.modis.map((row) => ({ lat: row[1], lng: row[0], w: 1 })),
+        ...displayRaw.viirs.map((row) => ({ lat: row[1], lng: row[0], w: 1 })),
       ];
     }
     return ds ? densityPoints(ds, mi) : [];
-  }, [dataMode, liveState.data, ds, mi]);
+  }, [dataMode, displayRaw, ds, mi]);
   const callout = useMemo(() => (dataMode === "sample" && ds && stats ? busiestRegion(ds, mi, area, stats) : null), [dataMode, ds, mi, area, stats]);
 
   const totalMax = Math.max(1, ...totals);
   const ranking = stats ? Object.entries(stats.byCountry).sort((a, b) => b[1] - a[1]).slice(0, 7) : [];
   const rankMax = ranking[0]?.[1] ?? 1;
   const suffix = query ? `?${query}` : "";
-  const incompleteSources = liveState.data?.sources.filter((source) => !source.ok || source.rows === 0 || isLiveSourceStale(source.updated)) ?? [];
+  const incompleteSources = remoteState?.data?.sources.filter((source) => !source.ok || source.rows === 0 || isLiveSourceStale(source.updated)) ?? [];
 
   return (
     <main className="stage" aria-label="Globe overview">
@@ -96,12 +106,13 @@ export function GlobeScreen() {
         <div className="seg" role="group" aria-label="Data source">
           <button type="button" aria-pressed={dataMode === "sample"} onClick={() => { setPlaying(false); setDataMode("sample"); }}>Sample history</button>
           <button type="button" aria-pressed={dataMode === "live"} onClick={() => { setPlaying(false); setDataMode("live"); }}>Live · last 24 h</button>
+          {BACKEND_CONFIGURED ? <button type="button" aria-pressed={dataMode === "backend"} onClick={() => { setPlaying(false); setDataMode("backend"); }}>Backend · month</button> : null}
         </div>
       </div>
 
       <div className="overlay">
         <aside className="side" aria-label="Summary">
-          <Panel title="Overview" aside={dataMode === "live" ? "Live · last 24 h" : monthLabel(mi)}>
+          <Panel title="Overview" aside={dataMode === "live" ? "Live · last 24 h" : dataMode === "backend" ? `Backend · ${monthLabel(mi)}` : monthLabel(mi)}>
             <div className="flex flex-col gap-3.5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="chip">Area · {areaLabel(area)}</span>
@@ -113,21 +124,21 @@ export function GlobeScreen() {
                   <Link className="muted text-xs underline" href={`/map${suffix}`}>Filter and inspect records on the map</Link>
                 )}
               </div>
-              {dataMode === "live" ? <>
+              {dataMode !== "sample" ? <>
                 <div>
                   <div className="kpi-big num">{liveSummary ? fmt(liveSummary.modis + liveSummary.viirs) : "–"}</div>
-                  <div className="kpi-label">live detections</div>
+                  <div className="kpi-label">{dataMode === "backend" ? "backend detections this month" : "live detections"}</div>
                 </div>
                 <div className="kpi-row border-t border-line pt-3">
                   <div className="kpi"><div className="v num">{liveSummary ? fmt(liveSummary.modis) : "–"}</div><div className="l"><i className="sw sq" />MODIS</div></div>
                   <div className="kpi"><div className="v num">{liveSummary ? fmt(liveSummary.viirs) : "–"}</div><div className="l"><i className="sw ci" />VIIRS</div></div>
                   <div className="kpi"><div className="v num">{liveSummary ? fmt(liveSummary.pairs) : "–"}</div><div className="l"><i className="sw ln" />pairs</div></div>
                 </div>
-                <p className="note">Latest detections, last 24 h, refreshed every 30 min while this page is open.</p>
-                {liveState.loading ? <p className="note" role="status">{liveState.data ? "Refreshing NASA FIRMS…" : "Fetching NASA FIRMS…"}</p> : null}
-                {liveState.error ? <p className="note" role="alert">{liveState.error} <button className="btn sm" type="button" onClick={liveState.retry}>Retry</button></p> : null}
+                <p className="note">{dataMode === "backend" ? "Harmonized backend detections for the selected month and area." : "Latest detections, last 24 h, refreshed every 30 min while this page is open."}</p>
+                {remoteState?.loading ? <p className="note" role="status">{dataMode === "backend" ? "Loading backend data…" : liveState.data ? "Refreshing NASA FIRMS…" : "Fetching NASA FIRMS…"}</p> : null}
+                {remoteState?.error ? <p className="note" role="alert">{remoteState.error} <button className="btn sm" type="button" onClick={remoteState.retry}>Retry</button></p> : null}
                 {incompleteSources.length ? <p className="note" role="status">{incompleteSources.length} source file{incompleteSources.length === 1 ? " is" : "s are"} empty, unavailable, or older than 24 hours; counts may be incomplete.</p> : null}
-                {liveState.data ? <p className="note">Snapshot generated {new Date(liveState.data.generatedAt).toLocaleString()}.</p> : null}
+                {remoteState?.data ? <p className="note">Snapshot generated {new Date(remoteState.data.generatedAt).toLocaleString()}.</p> : null}
               </> : <>
                 <div>
                   <div className="kpi-big num">{stats ? fmt(stats.harmonized) : "–"}</div>
@@ -185,15 +196,15 @@ export function GlobeScreen() {
               <span><i className="sw" style={{ background: "var(--magma-5)" }} />Harmonized</span>
               <span><i className="sw" style={{ background: "var(--cool)" }} />MODIS</span>
             </div>
-          </Panel> : <Panel title="Live detections by satellite">
+          </Panel> : <Panel title={dataMode === "backend" ? "Backend detections by satellite" : "Live detections by satellite"}>
             {liveSummary ? <>
               {liveSummary.modisBySatellite.map((row) => <p className="note" key={row.satellite}>MODIS · {row.satellite}: {fmt(row.count)} detections, {fmt(row.paired)} paired</p>)}
               {liveSummary.viirsBySatellite.map((row) => <p className="note" key={row.satellite}>VIIRS · {row.satellite}: {fmt(row.count)} detections, {fmt(row.paired)} paired</p>)}
-            </> : <p className="muted m-0">{liveState.loading ? "Loading live detections…" : "No live data loaded."}</p>}
+            </> : <p className="muted m-0">{remoteState?.loading ? "Loading detections…" : "No detections loaded."}</p>}
           </Panel>}
 
           <Panel title="Seen by both sensors, or one">
-            {dataMode === "live" && liveSummary ? <SplitBars rows={[
+            {dataMode !== "sample" && liveSummary ? <SplitBars rows={[
               { label: "Matched detections", value: liveSummary.pairedModis + liveSummary.pairedViirs, color: "var(--magma-5)" },
               { label: "MODIS only", value: liveSummary.modis - liveSummary.pairedModis, color: "var(--cool)" },
               { label: "VIIRS only", value: liveSummary.viirs - liveSummary.pairedViirs, color: "var(--hot)" },
@@ -206,7 +217,7 @@ export function GlobeScreen() {
                 ]}
               />
             ) : null}
-            <p className="muted mt-2.5 mb-0 text-[11px]">{dataMode === "live" && liveSummary ? `${fmt(liveSummary.pairs)} potential pair links within 1.5 km and 30 minutes.` : "A detection seen by one sensor only is not an error."}</p>
+            <p className="muted mt-2.5 mb-0 text-[11px]">{dataMode !== "sample" && liveSummary ? `${fmt(liveSummary.pairs)} potential pair links within 1.5 km and 30 minutes.` : "A detection seen by one sensor only is not an error."}</p>
           </Panel>
 
           <Panel title="Data and provenance">
@@ -217,6 +228,12 @@ export function GlobeScreen() {
                 ["Generated", liveState.data ? new Date(liveState.data.generatedAt).toLocaleString() : "Loading"],
                 ["Refresh", "Every 30 minutes while this page is open"],
                 ["Pairing", "≤ 1.5 km and ≤ 30 min"],
+              ] : dataMode === "backend" ? [
+                ["Source", "TerraWatch backend, NASA FIRMS observations"],
+                ["Coverage", monthLabel(mi)],
+                ["Generated", displayRaw ? new Date(displayRaw.generatedAt).toLocaleString() : "Loading"],
+                ["Harmonization", "Backend spatial-temporal matching"],
+                ["Pairing", "≤ 1.5 km; window selectable on the map"],
               ] : [
                 ["MODIS product", "MCD14ML, C6.1 (placeholder)"],
                 ["VIIRS product", "VNP14IMG, 375 m (placeholder)"],

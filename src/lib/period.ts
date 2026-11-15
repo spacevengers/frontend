@@ -16,6 +16,14 @@ export const monthShort = (mi: number) => `${MONTHS[mi % 12]} ${yearOf(mi)}`;
 
 export const toYearMonth = (mi: number) => `${yearOf(mi)}-${String((mi % 12) + 1).padStart(2, "0")}`;
 
+export function monthBounds(mi: number): [string, string] {
+  const year = yearOf(mi);
+  const month = (mi % 12) + 1;
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return [`${year}-${pad(month)}-01`, `${year}-${pad(month)}-${pad(last)}`];
+}
+
 export function fromYearMonth(value: string | null | undefined): number | null {
   const m = /^(\d{4})-(\d{2})$/.exec(value ?? "");
   if (!m) return null;

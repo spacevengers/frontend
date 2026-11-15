@@ -16,6 +16,10 @@ Open `http://localhost:3100`. The map is available at `/map`, the globe at `/`, 
 ## Data modes
 
 - **Sample history** powers the map, globe, and calendar with generated placeholder records. These are not NASA observations.
+- **Backend · month** on `/map` and `/` reads the Go backend through `/api/integration/*` when `NEXT_PUBLIC_API_URL` is set. It requests the selected month and area, then reuses the live map renderer. Set it in `.env.local`:
+  ```bash
+  NEXT_PUBLIC_API_URL=http://localhost:8000
+  ```
 - **Live · last 24 h** on `/map` and `/` requests `/api/firms/latest`, which downloads public NASA FIRMS CSV files on the server, spatially pairs MODIS and VIIRS detections, and caches the result for 30 minutes. The map and globe refresh every 30 minutes while their page is open. No FIRMS API key is required for these public CSVs. On the map, select a 30, 60, 120, or 180 minute time window to change which pairs are highlighted and counted; changing the window does not download the dataset again.
 - NASA GIBS Blue Marble imagery and the optional daily thermal-anomaly overlay are separate products from the live FIRMS CSV mode.
 
