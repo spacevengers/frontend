@@ -4,7 +4,7 @@ Next.js 16 + Tailwind CSS 4 + MapLibre GL (via `react-map-gl/maplibre`). Package
 
 ```bash
 pnpm install
-cp .env.example .env.local   # optional; leave NEXT_PUBLIC_API_URL empty for mock data
+cp .env.example .env.local   # then set NEXT_PUBLIC_API_URL to the backend
 pnpm dev
 ```
 
@@ -12,8 +12,7 @@ pnpm dev
 
 ```
 src/lib/types.ts       data contract (spec §7.3) — update when the backend schema is final
-src/lib/api.ts         API client for spec §11 endpoints; serves mock data when NEXT_PUBLIC_API_URL is unset
-src/lib/mock-data.ts   deterministic fake Kenya hotspots (MODIS + VIIRS + harmonized)
+src/lib/api.ts         API client for spec §11 endpoints (needs NEXT_PUBLIC_API_URL)
 src/lib/maplibre.ts    import before rendering a map (worker URL fix)
 scripts/               copies the MapLibre worker into public/ on predev/prebuild
 ```
