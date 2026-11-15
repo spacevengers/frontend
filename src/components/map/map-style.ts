@@ -17,14 +17,14 @@ export function buildStyle(ds: Dataset, theme: Theme): StyleSpecification {
   const modis: FilterSpecification = ["==", ["get", "sensor"], "MODIS"];
 
   const layers: LayerSpecification[] = [];
-  if (dark) {
-    layers.push({ id: "bg", type: "background", paint: { "background-color": "#000" } });
-    layers.push({ id: "bm", type: "raster", source: "bm", paint: { "raster-brightness-max": 0.6, "raster-saturation": -0.15, "raster-contrast": 0.12 } });
-  } else {
-    layers.push({ id: "land", type: "fill", source: "land", paint: { "fill-color": cssVar("--land") } });
-  }
   layers.push(
-    { id: "borders", type: "line", source: "borders", paint: { "line-color": dark ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.85)", "line-width": 0.6 } },
+    { id: "bg", type: "background", paint: { "background-color": dark ? "#000" : "#DDE9F5" } },
+    { id: "bm", type: "raster", source: "bm", paint: dark
+      ? { "raster-brightness-max": 0.6, "raster-saturation": -0.15, "raster-contrast": 0.12 }
+      : { "raster-saturation": -0.05, "raster-contrast": 0.06 } },
+  );
+  layers.push(
+    { id: "borders", type: "line", source: "borders", paint: { "line-color": dark ? "rgba(255,255,255,0.22)" : "rgba(15,42,71,0.35)", "line-width": 0.6 } },
     { id: "country-hit", type: "fill", source: "land", paint: { "fill-color": "#000", "fill-opacity": 0 } },
     { id: DATA_ANCHOR, type: "background", paint: { "background-opacity": 0 } },
     {
@@ -37,11 +37,11 @@ export function buildStyle(ds: Dataset, theme: Theme): StyleSpecification {
           "interpolate", ["linear"], ["heatmap-density"],
           0, "rgba(0,0,0,0)", 0.08, "rgba(74,18,101,0.55)", 0.25, MAGMA[2], 0.45, MAGMA[3], 0.65, MAGMA[4], 0.85, MAGMA[5], 1, MAGMA[6],
         ],
-        "heatmap-opacity": zoomRamp(3, 0.95, 6.5, dark ? 0.35 : 0.2),
+        "heatmap-opacity": zoomRamp(3, 0.95, 6.5, dark ? 0.35 : 0.32),
       },
     },
     { id: "link-glow", type: "line", source: "links", minzoom: 3, paint: { "line-color": dark ? MAGMA[4] : MAGMA[3], "line-width": zoomRamp(4, 2, 10, 9), "line-blur": zoomRamp(4, 2, 10, 8), "line-opacity": 0.55 } },
-    { id: "link", type: "line", source: "links", minzoom: 3, paint: { "line-color": dark ? MAGMA[6] : "#8A1C0A", "line-width": zoomRamp(4, 0.6, 10, 1.6), "line-opacity": 0.9 } },
+    { id: "link", type: "line", source: "links", minzoom: 3, paint: { "line-color": dark ? MAGMA[6] : "#B3321C", "line-width": zoomRamp(4, 0.6, 10, 1.6), "line-opacity": 0.95 } },
     { id: "viirs-glow", type: "circle", source: "det", minzoom: 4.5, filter: viirs, paint: { "circle-color": cssVar("--viirs"), "circle-radius": zoomRamp(5, 4, 10, 14), "circle-blur": 1, "circle-opacity": 0.55 } },
     { id: "viirs", type: "circle", source: "det", minzoom: 4.5, filter: viirs, paint: { "circle-color": cssVar("--viirs"), "circle-radius": zoomRamp(5, 1.6, 10, 5), "circle-stroke-color": cssVar("--edge"), "circle-stroke-width": 0.6 } },
     { id: "modis", type: "symbol", source: "det", minzoom: 4.5, filter: modis, layout: { "icon-image": "marker-square", "icon-size": zoomRamp(5, 0.35, 10, 0.8), "icon-allow-overlap": true } },

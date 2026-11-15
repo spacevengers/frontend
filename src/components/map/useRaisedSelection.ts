@@ -20,6 +20,12 @@ let instances = 0;
 export function useRaisedSelection(map: MapLibreMap | null, geometry: AreaGeometry | null, beforeId: string, theme: Theme) {
   useEffect(() => {
     if (!map || !geometry) return;
+    // On a theme change this runs once more with the map MapView just removed; the new map re-runs it.
+    try {
+      if (!map.getLayer(beforeId)) return;
+    } catch {
+      return;
+    }
 
     const n = ++instances;
     const id = { src: `selection-${n}`, mask: `selection-mask-${n}`, dim: `selection-dim-${n}`, glow: `selection-glow-${n}`, cliff: `selection-cliff-${n}`, top: `selection-top-${n}` };
