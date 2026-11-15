@@ -18,6 +18,7 @@ export interface LiveCluster {
   match_status: "matched" | "viirs_only" | "modis_only";
   p_modis_detect: number | null;
   frp_calibrated: number | null;
+  prediction_model: string | null;
 }
 
 export interface LiveSource {

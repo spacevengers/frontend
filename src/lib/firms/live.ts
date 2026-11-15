@@ -179,6 +179,7 @@ export interface LiveDetail {
   clusterStatus: "matched" | "viirs_only" | "modis_only" | null;
   pModisDetect: number | null;
   frpCalibrated: number | null;
+  predictionModel: string | null;
 }
 
 type LivePartner = { id: string; sensor: "MODIS" | "VIIRS"; minutes: number; km: number | null };
@@ -205,6 +206,7 @@ export function liveDetail(raw: LiveFirms, id: string): LiveDetail | null {
     clusterStatus: cluster?.match_status ?? null,
     pModisDetect: cluster?.p_modis_detect ?? null,
     frpCalibrated: cluster?.frp_calibrated ?? null,
+    predictionModel: cluster?.prediction_model ?? null,
   };
 }
 
